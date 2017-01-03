@@ -1,0 +1,193 @@
+load=ndlTimitMacros
+run=ndlCreateNetwork
+
+ndlTimitMacros = [
+    
+    featDim=$featDim$
+    labelDim=$labelDim$
+    
+    #featScale = Constant(0.00390625)
+    #featScaled = Scale(featScale, features)
+    
+    LogPrior(labels){
+        Prior=Mean(labels)
+        LogPrior=Log(Prior)
+    }
+    
+    MeanVarNorm(x)
+    {
+        xMean = Mean(x)
+        xStdDev = InvStdDev(x)
+        xNorm=PerDimMeanVarNormalization(x,xMean,xStdDev)
+    }
+    
+    DnnSigmoid(inDim, outDim, x) = [
+    W = LearnableParameter(outDim, inDim, init="uniform", initValueScale=1) 
+    b = LearnableParameter(outDim, 1,     init="uniform", initValueScale=1) 
+    t = Times(W, x)
+    z = Plus(t, b)
+    y = Sigmoid(z)
+    ]
+    DnnReLU(inDim, outDim, x, parmScale) = [
+    W = LearnableParameter(outDim, inDim, init="uniform", initValueScale=parmScale) 
+    b = LearnableParameter(outDim, 1,     init="uniform", initValueScale=parmScale) 
+    t = Times(W, x)
+    z = Plus(t, b)
+    y = RectifiedLinear(z)
+    ]
+    DnnBNSigmoid(inDim, outDim, x) = [
+        W = LearnableParameter(outDim, inDim, init = Gaussian, initValueScale = 1)
+        b = LearnableParameter(outDim, 1, init = fixedValue, value = 1)
+        sc = LearnableParameter(outDim, 1, init = fixedValue, value = 1)
+        m = LearnableParameter(outDim, 1, init = fixedValue, value = 0, needGradient = false)
+        isd = LearnableParameter(outDim, 1, init = fixedValue, value = 0, needGradient = false)
+        t = Times(W, x)
+        bn = BatchNormalization(t, sc, b, m, isd, spatial=false,
+                   normalizationTimeConstant = 0, blendTimeConstant = 0,
+                   epsilon = 0.00001
+                   )
+        y = Sigmoid(bn)
+    ]
+
+
+    DnnBNReLU(inDim, outDim, x) = [
+        W = LearnableParameter(outDim, inDim, init = Gaussian, initValueScale = 1)
+        b = LearnableParameter(outDim, 1, init = fixedValue, value = 1)
+        sc = LearnableParameter(outDim, 1, init = fixedValue, value = 1)
+        m = LearnableParameter(outDim, 1, init = fixedValue, value = 0, needGradient = false)
+        isd = LearnableParameter(outDim, 1, init = fixedValue, value = 0, needGradient = false)
+        t = Times(W, x)
+        bn = BatchNormalization(t, sc, b, m, isd, spatial=false,
+                   normalizationTimeConstant = 0, blendTimeConstant = 0,
+                   epsilon = 0.00001
+                   )
+        y = RectifiedLinear(bn)
+    ]
+
+    DNNLayer(inDim, outDim, x, parmScale) = [
+        W = LearnableParameter(outDim, inDim, init="uniform", initValueScale=parmScale)
+        b = LearnableParameter(outDim, 1,     init="uniform", initValueScale=parmScale)
+        t = Times(W, x)
+        z = Plus(t, b)
+    ]
+
+
+    ConvReLULayer(inp, outMap, inWCount, kW, kH, hStride, vStride, wScale, bValue) = [
+        convW = LearnableParameter(outMap, inWCount, init="uniform", initValueScale=wScale)
+        convB = ImageParameter(1, 1, outMap,     init="fixedValue", value=bValue, imageLayout="cudnn")
+        conv = Convolution(convW, inp, kW, kH, outMap, hStride, vStride, zeroPadding=false, imageLayout="cudnn")
+        convPlusB = Plus(conv, convB);
+        act = RectifiedLinear(convPlusB);
+    ]
+    ConvReLUBN(inp, outMap, inWCountx, kWx, kHx, hStride, vStride) = [
+        convWx = LearnableParameter(outMap, inWCountx, init="uniform", initValueScale=1)
+        convBx = ImageParameter(1, 1, outMap,     init="fixedValue", value=2, imageLayout="cudnn")
+        conv = Convolution(convWx, inp, kWx, kHx, outMap, hStride, vStride, zeroPadding=false, imageLayout="cudnn")
+        b_1 = LearnableParameter(outMap, 1, init = fixedValue, value = 1)
+        sc_1 = LearnableParameter(outMap, 1, init = fixedValue, value = 1)
+        m_1 = LearnableParameter(outMap, 1, init = fixedValue, value = 0, needGradient = false)
+        isd_1 = LearnableParameter(outMap, 1, init = fixedValue, value = 0, needGradient = false)
+        bn_1 = BatchNormalization(conv, sc_1, b_1, m_1, isd_1, spatial=true,
+                   normalizationTimeConstant = 0, blendTimeConstant = 0,
+                   epsilon = 0.00001
+                   )
+        nonlinear1 = RectifiedLinear(bn_1)
+    ] 
+    
+    ConvReLUPadLayer(inp, outMap, inWCount, kW, kH, hStride, vStride, wScale, bValue) = [
+        convW = LearnableParameter(outMap, inWCount, init="uniform", initValueScale=wScale)
+        convB = ImageParameter(1, 1, outMap,     init="fixedValue", value=bValue, imageLayout="cudnn")
+        conv = Convolution(convW, inp, kW, kH, outMap, hStride, vStride, zeroPadding=true, imageLayout="cudnn")
+        convPlusB = Plus(conv, convB);
+        act = RectifiedLinear(convPlusB);
+    ]
+    
+   RCL2BNReLU(inp, outMap, inWCountx, kWx, kHx, hStride, vStride, inWCounth, kWh, kHh) = [
+        convWx = LearnableParameter(outMap, inWCountx, init="uniform", initValueScale=1)
+        convBx = ImageParameter(1, 1, outMap,     init="fixedValue", value=2, imageLayout="cudnn")
+        conv = Convolution(convWx, inp, kWx, kHx, outMap, hStride, vStride, zeroPadding=false, imageLayout="cudnn")
+        b_1 = LearnableParameter(outMap, 1, init = fixedValue, value = 1)
+        sc_1 = LearnableParameter(outMap, 1, init = fixedValue, value = 1)
+        m_1 = LearnableParameter(outMap, 1, init = fixedValue, value = 0, needGradient = false)
+        isd_1 = LearnableParameter(outMap, 1, init = fixedValue, value = 0, needGradient = false)
+        bn_1 = BatchNormalization(conv, sc_1, b_1, m_1, isd_1, spatial=true,
+                   normalizationTimeConstant = 0, blendTimeConstant = 0,
+                   epsilon = 0.00001
+                   )
+        nonlinear1 = RectifiedLinear(bn_1)
+        
+        convWh = LearnableParameter(outMap, inWCounth, init="uniform", initValueScale=1)
+        rec1 = Convolution(convWh, nonlinear1, kWh, kHh, outMap, 1, 1, zeroPadding=true, imageLayout="cudnn")
+        sum1 = Plus(rec1,conv)
+        b_2 = LearnableParameter(outMap, 1, init = fixedValue, value = 1)
+        sc_2 = LearnableParameter(outMap, 1, init = fixedValue, value = 1)
+        m_2 = LearnableParameter(outMap, 1, init = fixedValue, value = 0, needGradient = false)
+        isd_2 = LearnableParameter(outMap, 1, init = fixedValue, value = 0, needGradient = false)
+        bn_2 = BatchNormalization(sum1, sc_2, b_2, m_2, isd_2, spatial=true,
+                   normalizationTimeConstant = 0, blendTimeConstant = 0,
+                   epsilon = 0.00001
+                   )
+       
+        nonlinear2 = RectifiedLinear(bn_2)
+        rec2 = Convolution(convWh, nonlinear2, kWh, kHh, outMap, 1, 1, zeroPadding=true, imageLayout="cudnn")
+        sum2 = Plus(rec2,conv)
+        b_3 = LearnableParameter(outMap, 1, init = fixedValue, value = 1)
+        sc_3 = LearnableParameter(outMap, 1, init = fixedValue, value = 1)
+        m_3 = LearnableParameter(outMap, 1, init = fixedValue, value = 0, needGradient = false)
+        isd_3 = LearnableParameter(outMap, 1, init = fixedValue, value = 0, needGradient = false)
+        bn_3 = BatchNormalization(sum2, sc_3, b_3, m_3, isd_3, spatial=true,
+                   normalizationTimeConstant = 0, blendTimeConstant = 0,
+                   epsilon = 0.00001
+                   )
+        
+        convPlusB = Plus(bn_3,convBx)
+        output = RectifiedLinear(convPlusB)
+    ]
+    
+
+]
+
+ndlCreateNetwork=[
+
+    #define basic i/o
+    features=Input(120,11, tag=feature) #120(40x3)x11
+    features1 = Transpose(features) #11x120
+    features2 = Reshape(features1,featDim,imageChannels=11,imageWidth=40,imageHeight=3,imageLayout="legacy")
+    labels = Input(labelDim,tag=label)
+
+    features_trans=Transpose(features2)
+    #features_trans=[40,11,3]
+    
+    # define network
+    # CNN
+    out=128
+    kWx=10
+    kHx=2
+    inWCountx=60
+    #input=[16,10,out]
+    hStride=2
+    vStride=1
+    inWCounth=5760
+    kWh=9
+    kHh=5
+    rcl1 = RCL2BNReLU(features_trans, out, inWCountx, kWx, kHx, hStride, vStride, inWCounth, kWh, kHh)
+    out2 = 256
+    kw=16
+    kh=2
+    conv = ConvReLULayer(rcl1, out2, 4096, kw, kh, 1, 1, 1, 1)
+ 
+
+    hdim=2048
+    h1=DnnBNSigmoid(2304, hdim, conv)
+    h2=DnnBNSigmoid(hdim, hdim, h1)
+    h3=DnnBNSigmoid(hdim, hdim, h2)
+    
+    ol=DNNLayer(hdim, labelDim, h3, 1)
+    
+    CE = CrossEntropyWithSoftmax(labels,ol,tag=Criteria)
+    Err = ErrorPrediction(labels,ol,tag=Eval)
+
+    # define output (scaled loglikelihood)
+    logPrior = LogPrior(labels)
+    ScaledLogLikelihood=Minus(ol.z,logPrior,tag=Output)
+]
